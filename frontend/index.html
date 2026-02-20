@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Social Trends</title>
+<style>
+body { font-family: Arial; margin: 40px; }
+.box { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Social Trends Dashboard</h1>
+
+<div class="box">
+<h2>TOP Hashtags</h2>
+<button onclick="load()">Odśwież</button>
+<ol id="tags"></ol>
+</div>
+
+<div class="box">
+<h2>Statystyki</h2>
+<pre id="stats"></pre>
+</div>
+
+<script>
+async function load(){
+    const tags = await fetch("http://localhost:8000/api/trends/hashtags").then(r=>r.json());
+    const stats = await fetch("http://localhost:8000/api/stats/interactions").then(r=>r.json());
+
+    const list = document.getElementById("tags");
+    list.innerHTML="";
+    tags.forEach(t=>{
+        const li=document.createElement("li");
+        li.textContent = "#" + t.hashtag + " (" + t.count + ")";
+        list.appendChild(li);
+    });
+
+    document.getElementById("stats").textContent = JSON.stringify(stats,null,2);
+}
+load();
+setInterval(load,5000);
+</script>
+
+</body>
+</html>

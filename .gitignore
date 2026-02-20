@@ -1,0 +1,10 @@
+# virtualenv
+.venv/
+
+# cache Pythona
+__pycache__/
+*.pyc
+
+# lokalne dane redis
+dump.rdb
+appendonly.aof
