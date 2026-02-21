@@ -1,108 +1,122 @@
 <!DOCTYPE html>
-<html>
+<html lang="pl">
 <head>
-<meta charset="UTF-8">
-<title>Social Trends</title>
-<style>
-body { font-family: Arial; margin: 40px; }
-.container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.box { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
-.header { margin-bottom: 20px; display:flex; gap:10px; align-items:center; }
-.tabbtn { padding: 8px 12px; border: 1px solid #888; background: #f6f6f6; cursor:pointer; border-radius:6px; }
-.tabbtn.active { background:#e8eefc; border-color:#3b82f6; }
-#ramlView { max-height: 600px; overflow:auto; background:#111; color:#eee; padding:12px; border-radius:6px; font-family: monospace; white-space: pre; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Social Trends — Interactive Demo</title>
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-
-<h1>Social Trends Dashboard</h1>
-
-<div class="header">
-  <button id="tabDashboard" class="tabbtn active">Dashboard</button>
-  <button id="tabRAML" class="tabbtn">API (RAML)</button>
-  <button onclick="load()" style="margin-left:auto">Odśwież</button>
-</div>
-
-<div id="dashboard">
-  <div class="container">
-    <div class="box">
-      <h2>TOP Hashtags</h2>
-      <ol id="tags"></ol>
+  <header class="header">
+    <h1>Social Trends — Interactive Demo</h1>
+    <div class="header-actions">
+      <button id="btnRefresh" class="btn">Odśwież</button>
     </div>
+  </header>
 
-    <div class="box">
-      <h2>Statystyki</h2>
-      <pre id="stats"></pre>
-    </div>
-  </div>
-</div>
+  <nav class="tabs">
+    <button id="tabDashboard" class="tab active">Dashboard</button>
+    <button id="tabRAML" class="tab">API (RAML)</button>
+    <button id="tabSim" class="tab">Symulacja</button>
+  </nav>
 
-<div id="ramlPanel" style="display:none">
-  <div class="box">
-    <h2>Specyfikacja RAML</h2>
-    <p>Plik: <code>/api.raml</code></p>
-    <div id="ramlView">Ładowanie...</div>
-    <p><a id="downloadLink" href="api.raml" download> Pobierz RAML </a></p>
-  </div>
-</div>
+  <main>
+    <section id="dashboard" class="panel">
+      <aside class="left">
+        <div class="card">
+          <h2>TOP Hashtags</h2>
+          <label class="inline">Top N:
+            <input id="topN" type="number" value="10" min="1" />
+          </label>
+          <ol id="tags"></ol>
+        </div>
 
-<script>
-async function load(){
-    // dashboard data
-    try {
-      const tags = await fetch("http://localhost:8000/api/trends/hashtags").then(r=>r.json());
-      const stats = await fetch("http://localhost:8000/api/stats/interactions").then(r=>r.json());
+        <div class="card">
+          <h2>Log akcji</h2>
+          <div id="log" class="log">Brak akcji.</div>
+        </div>
+      </aside>
 
-      const list = document.getElementById("tags");
-      list.innerHTML="";
-      tags.forEach(t=>{
-          const li=document.createElement("li");
-          li.textContent = "#" + t.hashtag + " (" + t.count + ")";
-          list.appendChild(li);
-      });
+      <aside class="right">
+        <div class="card">
+          <h3>Statystyki</h3>
+          <pre id="stats" class="small"></pre>
+        </div>
 
-      document.getElementById("stats").textContent = JSON.stringify(stats,null,2);
-    } catch (e) {
-      document.getElementById("tags").innerHTML = "<li>Nie można połączyć z backendem</li>";
-      document.getElementById("stats").textContent = e;
-    }
+        <div class="card">
+          <h3>Ręczne wysyłanie eventu</h3>
+          <form id="eventForm">
+            <label>Typ zdarzenia
+              <select id="evType">
+                <option value="like">like</option>
+                <option value="comment">comment</option>
+                <option value="share">share</option>
+                <option value="hashtag">hashtag</option>
+              </select>
+            </label>
 
-    // jeśli RAML jest widoczny, odśwież go też
-    if(document.getElementById('ramlPanel').style.display !== 'none'){
-      loadRAML();
-    }
-}
-async function loadRAML(){
-    const el = document.getElementById("ramlView");
-    try {
-      const resp = await fetch("api.raml");
-      if(!resp.ok) throw new Error("HTTP " + resp.status);
-      const txt = await resp.text();
-      el.textContent = txt;
-    } catch (e) {
-      el.textContent = "Błąd ładowania RAML: " + e;
-    }
-}
+            <label>Hashtagi (oddziel przecinkiem)
+              <input id="evHashtags" type="text" placeholder="#AI,#Python" />
+            </label>
 
-document.getElementById("tabDashboard").addEventListener("click", ()=> {
-  document.getElementById("dashboard").style.display = "";
-  document.getElementById("ramlPanel").style.display = "none";
-  document.getElementById("tabDashboard").classList.add("active");
-  document.getElementById("tabRAML").classList.remove("active");
-});
+            <label>User ID (opcjonalnie)
+              <input id="evUser" type="text" placeholder="u123" />
+            </label>
 
-document.getElementById("tabRAML").addEventListener("click", ()=> {
-  document.getElementById("dashboard").style.display = "none";
-  document.getElementById("ramlPanel").style.display = "";
-  document.getElementById("tabRAML").classList.add("active");
-  document.getElementById("tabDashboard").classList.remove("active");
-  loadRAML();
-});
+            <div class="form-actions">
+              <button id="btnSendEvent" class="btn">Wyślij</button>
+            </div>
 
-// autoload
-load();
-setInterval(load,5000);
-</script>
+            <div class="quick-actions">
+              <button type="button" class="btn" id="quickLike">Like #AI,#ML</button>
+              <button type="button" class="btn" id="quickComment">Comment #Python</button>
+              <button type="button" class="btn" id="quickShare">Share #Redis</button>
+            </div>
+          </form>
+        </div>
+      </aside>
+    </section>
 
+    <section id="ramlPanel" class="panel hidden">
+      <div class="card">
+        <h2>Specyfikacja RAML</h2>
+        <p class="small">Plik: <code>/api.raml</code></p>
+        <pre id="ramlView" class="raml">Ładowanie...</pre>
+        <p><a id="downloadLink" href="api.raml" download> Pobierz RAML </a></p>
+      </div>
+    </section>
+
+    <section id="simPanel" class="panel hidden">
+      <div class="card">
+        <h2>Masowa symulacja</h2>
+
+        <label>Ilość zdarzeń
+          <input id="burstCount" type="number" value="100" min="1" />
+        </label>
+
+        <label>Równoległość (concurrency)
+          <input id="concurrency" type="number" value="20" min="1" />
+        </label>
+
+        <label>Hashtagi (lista, przecinki)
+          <input id="burstTags" type="text" value="#AI,#Python,#Redis,#ML,#Data" />
+        </label>
+
+        <div class="form-actions">
+          <button id="btnRunBurst" class="btn">Uruchom symulację</button>
+        </div>
+
+        <div class="progress">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+
+        <div class="card small" style="margin-top:10px;">
+          <strong>Uwaga:</strong> symulacja wysyła żądania do <code>/api/events</code>.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

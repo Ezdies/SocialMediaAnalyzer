@@ -1,0 +1,54 @@
+:root {
+  --accent: #3b82f6;
+  --muted: #666;
+  --card-bg: #fff;
+  --page-bg: #f7f9fb;
+}
+
+* { box-sizing: border-box; }
+body {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  margin: 0;
+  background: var(--page-bg);
+  color: #111;
+  padding: 18px;
+}
+.header { display:flex; align-items:center; gap:12px; justify-content:space-between; margin-bottom:12px; }
+.header h1 { margin:0; font-size:1.2rem; }
+.header-actions .btn { margin-left:8px; }
+
+.tabs { display:flex; gap:8px; margin-bottom:12px; }
+.tab { padding:8px 12px; border-radius:6px; background:#f0f3f8; border:1px solid #d7e0f2; cursor:pointer; }
+.tab.active { background:linear-gradient(180deg,#e8eefc,#dbeeff); border-color:var(--accent); color:var(--accent); }
+
+main { display:block; }
+.panel { display:flex; gap:20px; }
+.panel.hidden { display:none; }
+
+.left { flex:1 1 60%; display:flex; flex-direction:column; gap:12px; }
+.right { flex:0 0 420px; display:flex; flex-direction:column; gap:12px; }
+
+.card { background: var(--card-bg); padding:14px; border-radius:8px; border:1px solid #e6eefc; box-shadow: 0 1px 2px rgba(16,24,40,0.03); }
+h2,h3 { margin:0 0 8px 0; font-size:1rem; }
+
+.inline { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+label { display:block; margin-top:8px; font-size:0.95rem; color:var(--muted); }
+input[type="text"], input[type="number"], select, textarea {
+  width:100%; padding:8px; margin-top:6px; border-radius:6px; border:1px solid #dfe7f7; background:#fff;
+}
+
+.btn {
+  padding:8px 10px; border-radius:6px; border:1px solid #c4d5f7; background:#f6f9ff; cursor:pointer;
+}
+.form-actions { margin-top:10px; }
+.quick-actions { display:flex; gap:8px; margin-top:8px; }
+.small { color:var(--muted); font-size:0.9rem; }
+
+.log { height:200px; overflow:auto; background:#0b1020; color:#dfeefe; padding:8px; border-radius:6px; font-family:monospace; white-space:pre-wrap; }
+
+ol#tags { padding-left:20px; margin:8px 0; }
+ol#tags li { margin:4px 0; }
+
+.progress { height:10px; background:#eef2ff; border-radius:6px; margin-top:10px; overflow:hidden; }
+.progress-bar { height:100%; width:0; background:linear-gradient(90deg,#4ade80,#06b6d4); transition:width 100ms linear; }
+.raml { background:#0b1020; color:#dfeefe; padding:12px; border-radius:6px; font-family:monospace; white-space:pre; max-height:600px; overflow:auto; }
