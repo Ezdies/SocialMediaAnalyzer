@@ -8,3 +8,5 @@ __pycache__/
 # lokalne dane redis
 dump.rdb
 appendonly.aof
+
+run/
