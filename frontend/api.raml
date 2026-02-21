@@ -1,0 +1,78 @@
+#%RAML 1.0
+title: Social Trends Analyzer API
+version: v1
+baseUri: http://localhost:8000/api
+mediaType: application/json
+
+types:
+  Event:
+    type: object
+    properties:
+      type: string
+      hashtags?: string[]
+      user_id?: string
+      metadata?: object
+
+securitySchemes: {}
+
+/health:
+  get:
+    description: Sprawdza status usługi.
+    responses:
+      200:
+        body:
+          application/json:
+            example: |
+              {
+                "status": "ok"
+              }
+
+/events:
+  post:
+    description: "Przyjmuje zdarzenia typu like/comment/share/hashtag i zapisuje do streamu. Aktualizuje liczniki i ranking hashtagów."
+    body:
+      application/json:
+        type: Event
+        example: |
+          {
+            "type": "like",
+            "hashtags": ["#AI", "#Python"],
+            "user_id": "u123",
+            "metadata": {"source":"demo"}
+          }
+    responses:
+      200:
+        body:
+          application/json:
+            example:
+              result: "ok"
+
+/trends/hashtags:
+  get:
+    description: "Zwraca TOP n hashtagów (domyślnie 10)."
+    queryParameters:
+      n:
+        type: integer
+        required: false
+        default: 10
+    responses:
+      200:
+        body:
+          application/json:
+            example: |
+              [
+                {"hashtag":"ai","count":12},
+                {"hashtag":"python","count":7}
+              ]
+
+/stats/interactions:
+  get:
+    description: "Zwraca liczniki interakcji (likes/comments/shares)."
+    responses:
+      200:
+        body:
+          application/json:
+            example:
+              likes: 123
+              comments: 45
+              shares: 9

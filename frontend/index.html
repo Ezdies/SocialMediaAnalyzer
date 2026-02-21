@@ -5,39 +5,101 @@
 <title>Social Trends</title>
 <style>
 body { font-family: Arial; margin: 40px; }
+.container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .box { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
+.header { margin-bottom: 20px; display:flex; gap:10px; align-items:center; }
+.tabbtn { padding: 8px 12px; border: 1px solid #888; background: #f6f6f6; cursor:pointer; border-radius:6px; }
+.tabbtn.active { background:#e8eefc; border-color:#3b82f6; }
+#ramlView { max-height: 600px; overflow:auto; background:#111; color:#eee; padding:12px; border-radius:6px; font-family: monospace; white-space: pre; }
 </style>
 </head>
 <body>
 
 <h1>Social Trends Dashboard</h1>
 
-<div class="box">
-<h2>TOP Hashtags</h2>
-<button onclick="load()">Odśwież</button>
-<ol id="tags"></ol>
+<div class="header">
+  <button id="tabDashboard" class="tabbtn active">Dashboard</button>
+  <button id="tabRAML" class="tabbtn">API (RAML)</button>
+  <button onclick="load()" style="margin-left:auto">Odśwież</button>
 </div>
 
-<div class="box">
-<h2>Statystyki</h2>
-<pre id="stats"></pre>
+<div id="dashboard">
+  <div class="container">
+    <div class="box">
+      <h2>TOP Hashtags</h2>
+      <ol id="tags"></ol>
+    </div>
+
+    <div class="box">
+      <h2>Statystyki</h2>
+      <pre id="stats"></pre>
+    </div>
+  </div>
+</div>
+
+<div id="ramlPanel" style="display:none">
+  <div class="box">
+    <h2>Specyfikacja RAML</h2>
+    <p>Plik: <code>/api.raml</code></p>
+    <div id="ramlView">Ładowanie...</div>
+    <p><a id="downloadLink" href="api.raml" download> Pobierz RAML </a></p>
+  </div>
 </div>
 
 <script>
 async function load(){
-    const tags = await fetch("http://localhost:8000/api/trends/hashtags").then(r=>r.json());
-    const stats = await fetch("http://localhost:8000/api/stats/interactions").then(r=>r.json());
+    // dashboard data
+    try {
+      const tags = await fetch("http://localhost:8000/api/trends/hashtags").then(r=>r.json());
+      const stats = await fetch("http://localhost:8000/api/stats/interactions").then(r=>r.json());
 
-    const list = document.getElementById("tags");
-    list.innerHTML="";
-    tags.forEach(t=>{
-        const li=document.createElement("li");
-        li.textContent = "#" + t.hashtag + " (" + t.count + ")";
-        list.appendChild(li);
-    });
+      const list = document.getElementById("tags");
+      list.innerHTML="";
+      tags.forEach(t=>{
+          const li=document.createElement("li");
+          li.textContent = "#" + t.hashtag + " (" + t.count + ")";
+          list.appendChild(li);
+      });
 
-    document.getElementById("stats").textContent = JSON.stringify(stats,null,2);
+      document.getElementById("stats").textContent = JSON.stringify(stats,null,2);
+    } catch (e) {
+      document.getElementById("tags").innerHTML = "<li>Nie można połączyć z backendem</li>";
+      document.getElementById("stats").textContent = e;
+    }
+
+    // jeśli RAML jest widoczny, odśwież go też
+    if(document.getElementById('ramlPanel').style.display !== 'none'){
+      loadRAML();
+    }
 }
+async function loadRAML(){
+    const el = document.getElementById("ramlView");
+    try {
+      const resp = await fetch("api.raml");
+      if(!resp.ok) throw new Error("HTTP " + resp.status);
+      const txt = await resp.text();
+      el.textContent = txt;
+    } catch (e) {
+      el.textContent = "Błąd ładowania RAML: " + e;
+    }
+}
+
+document.getElementById("tabDashboard").addEventListener("click", ()=> {
+  document.getElementById("dashboard").style.display = "";
+  document.getElementById("ramlPanel").style.display = "none";
+  document.getElementById("tabDashboard").classList.add("active");
+  document.getElementById("tabRAML").classList.remove("active");
+});
+
+document.getElementById("tabRAML").addEventListener("click", ()=> {
+  document.getElementById("dashboard").style.display = "none";
+  document.getElementById("ramlPanel").style.display = "";
+  document.getElementById("tabRAML").classList.add("active");
+  document.getElementById("tabDashboard").classList.remove("active");
+  loadRAML();
+});
+
+// autoload
 load();
 setInterval(load,5000);
 </script>
