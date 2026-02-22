@@ -1,20 +1,29 @@
 #!/usr/bin/env python3
 """
-backend/consumer.py  -- resilient consumer for events:stream
+backend/consumer.py  -- idempotent, robust consumer for events:stream
 
-This worker is robust to several message formats:
- - preferred: field "payload" containing JSON with keys: ts, hashtags (list)
- - fallback: field "hashtags" containing CSV string
- - otherwise: ack and skip (no hashtags)
+Behavior:
+ - reads from Redis Stream events:stream as consumer group
+ - extracts event_id from payload (preferred)
+ - uses SET NX EX on processed:{event_id} to avoid double processing
+ - updates global and windowed hashtag ZSETs
+ - acknowledges processed messages (XACK)
+ - periodically cleans up old windows
+
+Usage:
+  python3 backend/consumer.py
+Environment:
+  REDIS_HOST, REDIS_PORT, REDIS_DB, STREAM_KEY, GROUP_NAME, CONSUMER_NAME,
+  BATCH_SIZE, BLOCK_MS, RETENTION_MINUTES, DEDUPE_TTL_SECONDS
 """
 import redis
 import json
 import time
 import logging
-from datetime import datetime, timezone
 import os
+from datetime import datetime, timezone
 
-# configuration
+# CONFIG (can be overridden via env)
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
@@ -30,6 +39,7 @@ WINDOW_PREFIX = os.getenv("WINDOW_PREFIX", "hashtags:ranking:")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 50))
 BLOCK_MS = int(os.getenv("BLOCK_MS", 5000))
 RETENTION_MINUTES = int(os.getenv("RETENTION_MINUTES", 60))
+DEDUPE_TTL_SECONDS = int(os.getenv("DEDUPE_TTL_SECONDS", 7 * 24 * 3600))  # default 7 days
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("consumer")
@@ -37,8 +47,8 @@ log = logging.getLogger("consumer")
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
 
 def ensure_group():
+    """Create consumer group if missing; start at '$' to avoid reprocessing by default."""
     try:
-        # create group at the end of stream ($) so we don't reprocess old messages by default
         r.xgroup_create(STREAM, GROUP, id="$", mkstream=True)
         log.info("Created consumer group %s on %s", GROUP, STREAM)
     except redis.exceptions.ResponseError as e:
@@ -49,44 +59,40 @@ def ensure_group():
 
 def parse_hashtags_from_fields(fields):
     """
-    Robust extraction of hashtags from stream message fields.
-    Returns (hashtags_list, ts_ms) where hashtags_list is normalized (lowercase, no '#').
-    ts_ms may be None if not present.
+    Extract hashtags and timestamp robustly from stream message fields.
+    Returns (tags_list, ts_ms, payload_obj)
     """
-    hashtags = []
+    tags = []
     ts_ms = None
+    payload_obj = {}
 
-    # 1) try payload JSON
     payload = fields.get("payload")
     if payload:
         try:
-            obj = json.loads(payload)
-            # timestamp if present
-            ts_ms = obj.get("ts") or obj.get("time")
-            h = obj.get("hashtags") or obj.get("tags") or []
+            payload_obj = json.loads(payload)
+            ts_ms = payload_obj.get("ts") or payload_obj.get("time")
+            h = payload_obj.get("hashtags") or payload_obj.get("tags") or []
             if isinstance(h, list):
-                hashtags = [str(x) for x in h if x]
+                tags = [str(x) for x in h if x]
         except Exception:
-            log.debug("Failed to parse payload JSON, falling back to other fields")
+            log.debug("Failed to parse payload JSON", exc_info=True)
 
-    # 2) fallback: CSV in 'hashtags' field
-    if not hashtags:
+    if not tags:
         hcsv = fields.get("hashtags")
         if hcsv:
-            # sometimes stored like "#AI,#Redis" or "ai,redis"
             try:
-                hashtags = [s.strip() for s in hcsv.split(",") if s.strip()]
+                tags = [s.strip() for s in hcsv.split(",") if s.strip()]
             except Exception:
-                log.debug("Failed to parse hashtags CSV")
+                log.debug("Failed to parse hashtags CSV", exc_info=True)
 
-    # 3) fallback: maybe producer stored individual fields like 'tag1','tag2' (rare)
-    if not hashtags:
-        # scan for keys that look like tag fields (e.g., tag0, tag1) - optional heuristic
-        tag_keys = [k for k in fields.keys() if k.lower().startswith("tag")]
-        if tag_keys:
-            hashtags = [fields[k] for k in tag_keys if fields.get(k)]
+    if not tags:
+        # heuristic: any field name that looks like 'tag' or 'hashtagX'
+        for k, v in fields.items():
+            if k.lower().startswith("tag") or k.lower().startswith("hashtag"):
+                if v:
+                    tags.append(v)
 
-    # 4) fallback for ts if present as separate 'time' field (string or int)
+    # fallback ts from 'time' field (string)
     if ts_ms is None:
         tfield = fields.get("time") or fields.get("ts")
         if tfield:
@@ -98,9 +104,9 @@ def parse_hashtags_from_fields(fields):
                 except Exception:
                     ts_ms = None
 
-    # normalize tags: lowercase, strip '#', strip whitespace
+    # normalize tags
     clean = []
-    for tag in hashtags:
+    for tag in tags:
         try:
             t = str(tag).strip().lower().lstrip("#")
             if t:
@@ -108,10 +114,9 @@ def parse_hashtags_from_fields(fields):
         except Exception:
             continue
 
-    return clean, ts_ms
+    return clean, ts_ms, payload_obj
 
 def window_key_for_ts(ts_ms):
-    # get minute-level window key like 20260222T1437 -> YYYYMMDDHHMM
     if ts_ms is None:
         dt = datetime.utcnow()
     else:
@@ -122,12 +127,28 @@ def window_key_for_ts(ts_ms):
 
 def process_message(msg_id, fields):
     try:
-        tags, ts_ms = parse_hashtags_from_fields(fields)
+        tags, ts_ms, payload_obj = parse_hashtags_from_fields(fields)
+
         if not tags:
-            # nothing to aggregate — ack and move on, but log for debug
+            # nothing to aggregate — ack and continue
             log.info("No hashtags in message %s — fields=%s", msg_id, {k: (v[:200] + '...') if isinstance(v, str) and len(v)>200 else v for k,v in fields.items()})
             r.xack(STREAM, GROUP, msg_id)
             return
+
+        # attempt dedupe by event_id in payload (best) or fallback to message-id (less ideal)
+        event_id = payload_obj.get("event_id") if isinstance(payload_obj, dict) else None
+        if event_id:
+            dedupe_key = f"processed:{event_id}"
+            # SET NX EX — returns True if set, None/False if already exists
+            was_set = r.set(dedupe_key, "1", nx=True, ex=DEDUPE_TTL_SECONDS)
+            if not was_set:
+                # already processed
+                r.xack(STREAM, GROUP, msg_id)
+                log.info("Duplicate detected — skipping event_id=%s msg=%s", event_id, msg_id)
+                return
+        else:
+            # no event_id: optional strategy could be to dedupe by message-id, but skip for now
+            pass
 
         window_key, window_name, window_ts = window_key_for_ts(ts_ms)
 
@@ -135,7 +156,6 @@ def process_message(msg_id, fields):
         for tag in tags:
             pipe.zincrby(GLOBAL_RANKING, 1, tag)
             pipe.zincrby(window_key, 1, tag)
-        # record active window (score = unix seconds)
         pipe.zadd(WINDOW_INDEX, {window_name: window_ts})
         pipe.execute()
 
@@ -143,7 +163,7 @@ def process_message(msg_id, fields):
         log.info("Processed %s tags=%s window=%s", msg_id, ",".join(tags), window_name)
     except Exception as e:
         log.exception("Error processing message %s: %s", msg_id, e)
-        # do not ack here so pending can be examined later
+        # do not ack on unexpected error — message remains in pending for investigation
 
 def cleanup_old_windows(retention_minutes):
     try:

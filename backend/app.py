@@ -1,4 +1,3 @@
-# backend/app.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,6 +6,7 @@ import redis
 import time
 import json
 import os
+from uuid import uuid4
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -41,11 +41,13 @@ def health():
 @app.post("/api/events")
 def post_event(ev: Event):
     """
-    Producer: jedynie zapisuje pełny event do streama (events:stream)
-    Consumer przejmie agregacje (global i window).
+    Producer: jedynie zapisuje pełny event do streama (events:stream).
+    Zwraca event_id (UUID) aby ułatwić testy idempotencji.
     """
     ts = int(time.time() * 1000)
+    event_id = str(uuid4())
     payload_obj = {
+        "event_id": event_id,
         "type": ev.type,
         "hashtags": ev.hashtags or [],
         "user_id": ev.user_id or "",
@@ -55,17 +57,17 @@ def post_event(ev: Event):
     payload_str = json.dumps(payload_obj, ensure_ascii=False)
 
     try:
-        # zapis do streama tylko
         hashtags_csv = ",".join([h.strip() for h in (ev.hashtags or []) if h])
+        # zapis do streama tylko
         r.xadd("events:stream", {"payload": payload_str, "time": ts, "hashtags": hashtags_csv})
     except redis.RedisError as re:
         raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
-    return {"result": "ok", "ts": ts}
+    return {"result": "ok", "ts": ts, "event_id": event_id}
 
-# Te endpointy służą do odczytu wyników, które generuje consumer
+# Endpointy do odczytu wyników (materializowanych przez consumer)
 @app.get("/api/trends/hashtags")
 def top_hashtags(n: int = 10):
     try:
