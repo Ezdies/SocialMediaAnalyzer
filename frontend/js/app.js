@@ -63,11 +63,14 @@ if (form) {
     const type = document.getElementById('evtType').value;
     const tags = document.getElementById('evtTags').value.split(',').map(s=>s.trim()).filter(Boolean);
     const user = document.getElementById('evtUser').value || ('u' + Math.floor(Math.random()*10000));
-    const comment = (document.getElementById('evtComment') ? document.getElementById('evtComment').value : '') || '';
+    const commentEl = document.getElementById('evtComment');
+    const comment = commentEl ? commentEl.value : '';
     try {
-      const res = await API.postEvent({ type, hashtags: tags, user_id: user, comment });
+      const payload = { type, hashtags: tags, user_id: user };
+      if (type === 'comment' && comment) payload.comment = comment;
+      const res = await API.postEvent(payload);
       appendLog(`Event posted id=${res.event_id} type=${type}`);
-      if (comment) appendLog(`Comment: ${comment}`);
+      if (payload.comment) appendLog(`Comment: ${payload.comment}`);
       showLastEventId(res.event_id);
       // quick refresh
       await loadAll();
@@ -124,6 +127,8 @@ function updateCommentVisibility() {
     if (lbl) lbl.style.display = 'block';
   } else {
     ta.style.display = 'none';
+    // clear any stale comment so it isn't sent accidentally
+    try { ta.value = ''; } catch (_) {}
     if (lbl) lbl.style.display = 'none';
   }
 }
