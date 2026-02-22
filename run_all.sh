@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-# run_all.sh — uruchamia/wyłącza lokalny stack (Redis, backend, frontend, redis-commander)
+# run_all.sh — uruchamia/wyłącza lokalny stack (Redis, backend, frontend, redis-commander, consumer)
 # Usage:
 #   ./run_all.sh start
 #   ./run_all.sh stop
 #   ./run_all.sh status
 #   ./run_all.sh restart
-#
-# Zasady:
-# - Nie zatrzymujemy systemowego Redisa, jeśli nie został uruchomiony przez skrypt.
-# - Redis uruchamiany lokalnie dostaje PIDfile w ./run/pids/redis.pid (jeśli musimy go uruchomić).
-# - redis-commander uruchamiany jest przez npx (nvm jest ładowane jeśli obecne).
-# - Logi i PIDy w ./run/logs i ./run/pids.
+#   ./run_all.sh reset
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -77,80 +72,38 @@ kill_by_port() {
   fi
 }
 
-reset_redis() {
-  echo "Resetting application data in Redis..."
-
-  if ! command -v redis-cli >/dev/null 2>&1; then
-    echo "redis-cli not found — cannot reset"
-    return 1
+# Stop process by pidfile if exists
+stop_process() {
+  local pidf="$1"
+  if [[ -f "$pidf" ]]; then
+    local pid
+    pid=$(cat "$pidf")
+    if ps -p "$pid" > /dev/null 2>&1; then
+      echo "Stopping PID $pid ..."
+      kill "$pid" || true
+      sleep 0.2
+      if ps -p "$pid" > /dev/null 2>&1; then
+        echo "PID $pid still running — sending kill -9"
+        kill -9 "$pid" || true
+      fi
+    fi
+    rm -f "$pidf"
   fi
-
-  # sprawdź czy redis działa
-  if ! redis-cli -p "$REDIS_PORT" ping >/dev/null 2>&1; then
-    echo "Redis not running — nothing to reset"
-    return 0
-  fi
-
-  # usuń ranking hashtagów
-  redis-cli -p "$REDIS_PORT" DEL hashtags:ranking >/dev/null 2>&1 || true
-
-  # usuń stream zdarzeń
-  redis-cli -p "$REDIS_PORT" DEL events:stream >/dev/null 2>&1 || true
-
-  # usuń wszystkie statystyki
-  for key in $(redis-cli -p "$REDIS_PORT" KEYS "stats:*"); do
-    redis-cli -p "$REDIS_PORT" DEL "$key" >/dev/null 2>&1 || true
-  done
-
-  echo "Redis project data cleared."
 }
 
-# Start Redis: try systemctl, then /etc/init.d, then local redis-server with pidfile
+# Start redis-server (if available)
 start_redis() {
-  # If already listening, skip
-  if ss -ltn "sport = :$REDIS_PORT" 2>/dev/null | grep -q LISTEN; then
-    echo "Redis already listening on port $REDIS_PORT — skipping start."
+  local pidf; pidf="$(pidfile redis)"
+  if is_running "$pidf"; then
+    echo "Redis already running (PID $(cat "$pidf"))."
     return 0
   fi
 
-  # 1) Try systemctl
-  if command -v systemctl >/dev/null 2>&1; then
-    echo "Attempting to start redis via systemctl..."
-    if sudo --non-interactive true 2>/dev/null; then
-      sudo systemctl start redis || true
-    else
-      systemctl start redis || true
-    fi
-    sleep 0.5
-    if ss -ltn "sport = :$REDIS_PORT" 2>/dev/null | grep -q LISTEN; then
-      echo "Redis started (systemctl)."
-      return 0
-    fi
-  fi
-
-  # 2) Try /etc/init.d/redis-server
-  if [[ -x "/etc/init.d/redis-server" ]] || [[ -f "/etc/init.d/redis-server" ]]; then
-    echo "Attempting to start redis via /etc/init.d/redis-server..."
-    if sudo --non-interactive true 2>/dev/null; then
-      sudo /etc/init.d/redis-server start || true
-    else
-      /etc/init.d/redis-server start || true
-    fi
-    sleep 0.5
-    if ss -ltn "sport = :$REDIS_PORT" 2>/dev/null | grep -q LISTEN; then
-      echo "Redis started (/etc/init.d)."
-      return 0
-    fi
-  fi
-
-  # 3) Start local redis-server with pidfile in run/pids
   if command -v redis-server >/dev/null 2>&1; then
     echo "Starting local redis-server --daemonize yes with pidfile..."
     local pidfile_path
-    pidfile_path="$(pidfile redis)"  # run/pids/redis.pid
-    # remove any stale pidfile_path before starting
+    pidfile_path="$(pidfile redis)"
     rm -f "$pidfile_path" >/dev/null 2>&1 || true
-    # start with pidfile argument (most redis builds accept --pidfile)
     redis-server --port "$REDIS_PORT" --daemonize yes --pidfile "$pidfile_path" >/dev/null 2>&1 || true
     sleep 0.5
     if [[ -f "$pidfile_path" ]]; then
@@ -159,7 +112,6 @@ start_redis() {
       return 0
     fi
 
-    # fallback: try to detect pid by pgrep and save to pidfile
     local realpid
     realpid=$(pgrep -f "redis-server.*:$REDIS_PORT" || pgrep -f "redis-server" || true)
     if [[ -n "$realpid" ]]; then
@@ -176,6 +128,17 @@ start_redis() {
 
   echo "redis-server not found. Please install Redis or start it manually."
   return 1
+}
+
+# Reset Redis keys you want when running 'reset'
+reset_redis() {
+  echo "Resetting Redis keys used by the project..."
+  if command -v redis-cli >/dev/null 2>&1; then
+    redis-cli -p "$REDIS_PORT" DEL stats:likes stats:comments stats:shares hashtags:ranking hashtags:windows >/dev/null 2>&1 || true
+    echo "Keys deleted (best-effort)."
+  else
+    echo "redis-cli not found — cannot reset keys automatically."
+  fi
 }
 
 # Start backend (uvicorn). Use venv uvicorn if available, else python3 -m uvicorn
@@ -211,6 +174,17 @@ start_backend() {
   popd >/dev/null
 }
 
+# Stop backend
+stop_backend() {
+  stop_process "$(pidfile backend)"
+  # fallback: try to kill process by name if pidfile was stale
+  local bpid; bpid=$(pgrep -f "uvicorn.*app:app" || pgrep -f "uvicorn" || true)
+  if [[ -n "$bpid" ]]; then
+    echo "Killing leftover uvicorn process $bpid"
+    kill "$bpid" 2>/dev/null || true
+  fi
+}
+
 # Start frontend (python3 -m http.server)
 start_frontend() {
   local pidf
@@ -235,6 +209,17 @@ start_frontend() {
     echo "Warning: couldn't detect frontend PID. Check $(logfile frontend)."
   fi
   popd >/dev/null
+}
+
+# Stop frontend
+stop_frontend() {
+  stop_process "$(pidfile frontend)"
+  # fallback: kill by http.server name
+  local fpid; fpid=$(pgrep -f "python3.*http.server" || pgrep -f "http.server" || true)
+  if [[ -n "$fpid" ]]; then
+    echo "Killing leftover http.server process $fpid"
+    kill "$fpid" 2>/dev/null || true
+  fi
 }
 
 # Start redis-commander via npx (nvm loaded if present)
@@ -263,22 +248,63 @@ start_redis_commander() {
   fi
 }
 
-# Stop process by pidfile if exists
-stop_process() {
-  local pidf="$1"
-  if [[ -f "$pidf" ]]; then
-    local pid
-    pid=$(cat "$pidf")
-    if ps -p "$pid" > /dev/null 2>&1; then
-      echo "Stopping PID $pid ..."
-      kill "$pid" || true
-      sleep 0.2
-      if ps -p "$pid" > /dev/null 2>&1; then
-        echo "PID $pid still running — sending kill -9"
-        kill -9 "$pid" || true
-      fi
-    fi
-    rm -f "$pidf"
+# Stop redis-commander
+stop_redis_commander() {
+  stop_process "$(pidfile redis-commander)"
+  local rpid; rpid=$(pgrep -f "redis-commander" || true)
+  if [[ -n "$rpid" ]]; then
+    echo "Killing leftover redis-commander $rpid"
+    kill "$rpid" 2>/dev/null || true
+  fi
+}
+
+# --- NEW: Consumer management functions ---
+start_consumer() {
+  local pidf
+  pidf="$(pidfile consumer)"
+  if is_running "$pidf"; then
+    echo "Consumer already running (PID $(cat "$pidf"))."
+    return 0
+  fi
+
+  # Ensure backend is running first (consumer depends on Redis + stream produced by backend)
+  if ! is_running "$(pidfile backend)"; then
+    echo "Warning: backend not running (consumer prefers backend running). Starting backend first..."
+    start_backend
+    sleep 0.4
+  fi
+
+  pushd "$ROOT/backend" >/dev/null
+  echo "Starting consumer (backend/consumer.py)..."
+
+  # prefer python from venv if available
+  if [[ -d "$VENV_DIR" && -x "$VENV_DIR/bin/python" ]]; then
+    nohup "$VENV_DIR/bin/python" consumer.py > "$(logfile consumer)" 2>&1 &
+  else
+    nohup python3 consumer.py > "$(logfile consumer)" 2>&1 &
+  fi
+
+  sleep 0.4
+  local realpid
+  # try detect process by script name
+  realpid=$(pgrep -f "consumer.py" || true)
+  if [[ -n "$realpid" ]]; then
+    realpid=$(echo "$realpid" | head -n1)
+    echo "$realpid" > "$pidf"
+    echo "Consumer started (PID $realpid), log: $(logfile consumer)"
+  else
+    echo "Warning: couldn't detect consumer PID. Check $(logfile consumer)."
+  fi
+  popd >/dev/null
+}
+
+stop_consumer() {
+  stop_process "$(pidfile consumer)"
+  # fallback: try to kill by script name
+  local cpid; cpid=$(pgrep -f "consumer.py" || true)
+  if [[ -n "$cpid" ]]; then
+    echo "Killing leftover consumer process $cpid"
+    kill "$cpid" 2>/dev/null || true
   fi
 }
 
@@ -289,6 +315,7 @@ stop_all() {
   # stop by pidfiles first
   stop_process "$(pidfile redis-commander)"
   stop_process "$(pidfile frontend)"
+  stop_process "$(pidfile consumer)"
   stop_process "$(pidfile backend)"
 
   # additional cleanup: kill by ports if processes still listening
@@ -361,6 +388,19 @@ status_all() {
     fi
   fi
 
+  # consumer
+  local cons_pidf; cons_pidf=$(pidfile consumer)
+  if is_running "$cons_pidf"; then
+    echo "  consumer: running (PID $(cat "$cons_pidf"))"
+  else
+    local cpid; cpid=$(pgrep -f "consumer.py" || true)
+    if [[ -n "$cpid" ]]; then
+      echo "  consumer: running (PID $(echo "$cpid" | head -n1))"
+    else
+      echo "  consumer: stopped"
+    fi
+  fi
+
   # redis server
   if ss -ltn "sport = :$REDIS_PORT" 2>/dev/null | grep -q LISTEN; then
     echo "  redis: listening on port $REDIS_PORT"
@@ -380,6 +420,7 @@ case "${1:-start}" in
     start_redis || echo "Warning: problem starting Redis."
     start_backend
     start_frontend
+    start_consumer
     start_redis_commander
     echo ""
     echo "Stack should be up. Frontend: http://localhost:$FRONTEND_PORT  Backend: http://localhost:$UVICORN_PORT  Redis-Commander: http://localhost:$REDIS_CMD_PORT"
@@ -391,6 +432,7 @@ case "${1:-start}" in
     reset_redis
     start_backend
     start_frontend
+    start_consumer
     start_redis_commander
     echo ""
     echo "Stack reset & started. Clean database ready."
