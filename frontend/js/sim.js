@@ -13,7 +13,18 @@ export async function runBurst({ count = 100, concurrency = 20, tags = ['#AI','#
   const makeEvent = () => {
     const type = ['like','comment','share'][Math.floor(Math.random()*3)];
     const tag = norm[Math.floor(Math.random()*norm.length)];
-    return { type, hashtags: [tag], user_id: 'sim-' + Math.floor(Math.random()*10000) };
+    const base = { type, hashtags: [tag], user_id: 'sim-' + Math.floor(Math.random()*10000) };
+    if (type === 'comment') {
+      const sample = [
+        'Nice post!',
+        'Great insight, thanks for sharing.',
+        'I totally agree with this.',
+        'Could you provide more details?',
+        'Interesting perspective.'
+      ];
+      base.comment = sample[Math.floor(Math.random()*sample.length)];
+    }
+    return base;
   };
 
   const tasks = new Array(count).fill(0).map(() => async () => {

@@ -1,7 +1,7 @@
 // frontend/app.js
 import * as API from "./api.js";
 import { runBurst } from "./sim.js";
-import { renderTags, renderStats, appendLog, showLastEventId, renderTrends, renderUsers } from "./ui.js";
+import { renderTags, renderStats, appendLog, showLastEventId, renderTrends, renderUsers, renderComments } from "./ui.js";
 
 const topList = document.getElementById('topList');
 const statsBox = document.getElementById('statsBox');
@@ -9,6 +9,7 @@ const logBox = document.getElementById('logBox');
 const lastId = document.getElementById('lastEventId');
 const trendsList = document.getElementById('trendsList');
 const usersList = document.getElementById('usersList');
+const commentsList = document.getElementById('commentsList');
 
 let currentHashtagPeriod = '1h';
 let currentUserPeriod = 'all';
@@ -41,6 +42,12 @@ async function loadAll() {
     renderStats(statsBox, stats);
     await loadTrends(currentHashtagPeriod);
     await loadUsers(currentUserPeriod);
+      try {
+        const comments = await API.getRecentComments(20);
+        renderComments(commentsList, comments);
+      } catch (e) {
+        appendLog(`Comments load error: ${e.message}`);
+      }
   } catch (e) {
     appendLog(`Load error: ${e.message}`);
   }
@@ -56,9 +63,11 @@ if (form) {
     const type = document.getElementById('evtType').value;
     const tags = document.getElementById('evtTags').value.split(',').map(s=>s.trim()).filter(Boolean);
     const user = document.getElementById('evtUser').value || ('u' + Math.floor(Math.random()*10000));
+    const comment = (document.getElementById('evtComment') ? document.getElementById('evtComment').value : '') || '';
     try {
-      const res = await API.postEvent({ type, hashtags: tags, user_id: user });
+      const res = await API.postEvent({ type, hashtags: tags, user_id: user, comment });
       appendLog(`Event posted id=${res.event_id} type=${type}`);
+      if (comment) appendLog(`Comment: ${comment}`);
       showLastEventId(res.event_id);
       // quick refresh
       await loadAll();
@@ -102,6 +111,27 @@ document.querySelectorAll('.tab-users').forEach(btn => {
     await loadUsers(btn.dataset.period);
   });
 });
+
+// show/hide comment textarea based on selected event type
+const typeSelect = document.getElementById('evtType');
+function updateCommentVisibility() {
+  const v = typeSelect ? typeSelect.value : null;
+  const ta = document.getElementById('evtComment');
+  const lbl = document.getElementById('lblComment');
+  if (!ta) return;
+  if (v === 'comment') {
+    ta.style.display = 'block';
+    if (lbl) lbl.style.display = 'block';
+  } else {
+    ta.style.display = 'none';
+    if (lbl) lbl.style.display = 'none';
+  }
+}
+if (typeSelect) {
+  typeSelect.addEventListener('change', updateCommentVisibility);
+  // initial
+  updateCommentVisibility();
+}
 
 // initial load + polling
 window.addEventListener('load', () => {

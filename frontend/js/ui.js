@@ -63,3 +63,19 @@ export function renderUsers(container, users) {
     container.appendChild(li);
   });
 }
+
+export function renderComments(container, comments) {
+  container.innerHTML = '';
+  if (!Array.isArray(comments) || comments.length === 0) {
+    container.innerHTML = '<li>No comments</li>';
+    return;
+  }
+  comments.forEach((it, idx) => {
+    const user = it.user || '';
+    const comment = it.comment || '';
+    const ts = it.ts ? new Date(Number(it.ts)).toLocaleString() : '';
+    const li = document.createElement('li');
+    li.textContent = `${ts} ${user ? user + ': ' : ''}${comment}`;
+    container.appendChild(li);
+  });
+}

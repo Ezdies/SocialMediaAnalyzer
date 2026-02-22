@@ -180,6 +180,18 @@ def process_message(msg_id, fields):
             pipe.zincrby("users:activity", 1, user_id)
             pipe.zincrby(f"users:activity:{window_name}", 1, user_id)
         
+        # Store recent comments (keep last 100)
+        try:
+            comment = None
+            if isinstance(payload_obj, dict):
+                comment = payload_obj.get('comment')
+            if comment:
+                comment_obj = json.dumps({"user": user_id or "", "comment": str(comment), "ts": ts_ms or int(time.time() * 1000)})
+                pipe.lpush("recent:comments", comment_obj)
+                pipe.ltrim("recent:comments", 0, 99)
+        except Exception:
+            log.debug("Failed to push recent comment", exc_info=True)
+        
         pipe.execute()
 
         r.xack(STREAM, GROUP, msg_id)

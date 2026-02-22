@@ -35,6 +35,9 @@
             <label for="evtUser">User id (optional)</label>
             <input id="evtUser" type="text" placeholder="user-123" />
 
+            <label for="evtComment" id="lblComment" style="display:none">Comment</label>
+            <textarea id="evtComment" placeholder="Write a comment..." style="display:none; width:100%; min-height:80px; margin-top:6px; border-radius:6px; padding:8px; border:1px solid #dfe7f7"></textarea>
+
             <div class="quick-actions">
               <button type="submit" class="btn">Send Event</button>
               <button type="button" id="simBtn" class="btn">Run Simulator</button>
@@ -89,6 +92,13 @@
         <div class="card">
           <h2>Activity Log</h2>
           <pre id="logBox" class="log"></pre>
+        </div>
+        
+        <div class="card">
+          <h2>Recent Comments</h2>
+          <ol id="commentsList" class="small">
+            <li>Loading…</li>
+          </ol>
         </div>
       </div>
     </div>

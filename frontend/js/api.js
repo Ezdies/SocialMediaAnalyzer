@@ -25,6 +25,7 @@ export async function postEvent(payload) {
     type: payload.type,
     hashtags: Array.isArray(payload.hashtags) ? payload.hashtags : (payload.hashtags ? [payload.hashtags] : []),
     user_id: payload.user_id || payload.user || "",
+    comment: payload.comment || "",
     metadata: payload.metadata || {}
   };
   return await request('/events', { method: 'POST', body: JSON.stringify(safe) });
@@ -50,6 +51,12 @@ export async function getHashtagsByPeriod(period = "1h", n = 10) {
 export async function getTopUsers(period = "all", n = 10) {
   const q = `?period=${encodeURIComponent(period)}&n=${encodeURIComponent(n)}`;
   const data = await request(`/trends/top-users${q}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getRecentComments(n = 20) {
+  const q = `?n=${encodeURIComponent(n)}`;
+  const data = await request(`/comments/recent${q}`, { method: 'GET' });
   return Array.isArray(data) ? data : [];
 }
 

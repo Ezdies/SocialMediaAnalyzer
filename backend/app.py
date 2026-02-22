@@ -28,6 +28,7 @@ app.add_middleware(
 class Event(BaseModel):
     type: Literal["like", "comment", "share", "hashtag"]
     hashtags: Optional[List[str]] = []
+    comment: Optional[str] = None
     user_id: Optional[str] = None
     metadata: Optional[dict] = {}
 
@@ -51,6 +52,7 @@ def post_event(ev: Event):
         "event_id": event_id,
         "type": ev.type,
         "hashtags": ev.hashtags or [],
+        "comment": ev.comment or "",
         "user_id": ev.user_id or "",
         "metadata": ev.metadata or {},
         "ts": ts
@@ -172,6 +174,25 @@ def top_users(period: str = "all", n: int = 10):
                 raise HTTPException(status_code=400, detail="period must be all, 1h, 24h, or 7d")
         
         out = [{"user": member, "activity_count": int(score)} for member, score in raw]
+        return out
+    except redis.RedisError as re:
+        raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")
+
+
+@app.get("/api/comments/recent")
+def recent_comments(n: int = 20):
+    """
+    Return recent comments stored by the consumer (most recent first).
+    """
+    try:
+        raw = r.lrange("recent:comments", 0, n - 1)
+        out = []
+        for item in raw:
+            try:
+                out.append(json.loads(item))
+            except Exception:
+                # fallback to raw string
+                out.append({"user": "", "comment": item, "ts": None})
         return out
     except redis.RedisError as re:
         raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")
