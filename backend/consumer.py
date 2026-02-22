@@ -59,10 +59,11 @@ def ensure_group():
 
 def parse_hashtags_from_fields(fields):
     """
-    Extract hashtags and timestamp robustly from stream message fields.
-    Returns (tags_list, ts_ms, payload_obj)
+    Extract hashtags, event type, and timestamp robustly from stream message fields.
+    Returns (tags_list, event_type, ts_ms, payload_obj)
     """
     tags = []
+    event_type = None
     ts_ms = None
     payload_obj = {}
 
@@ -71,11 +72,16 @@ def parse_hashtags_from_fields(fields):
         try:
             payload_obj = json.loads(payload)
             ts_ms = payload_obj.get("ts") or payload_obj.get("time")
+            event_type = payload_obj.get("type")
             h = payload_obj.get("hashtags") or payload_obj.get("tags") or []
             if isinstance(h, list):
                 tags = [str(x) for x in h if x]
         except Exception:
             log.debug("Failed to parse payload JSON", exc_info=True)
+
+    # Fallback for old format: try to get type from direct field
+    if not event_type:
+        event_type = fields.get("type")
 
     if not tags:
         hcsv = fields.get("hashtags")
@@ -114,7 +120,7 @@ def parse_hashtags_from_fields(fields):
         except Exception:
             continue
 
-    return clean, ts_ms, payload_obj
+    return clean, event_type, ts_ms, payload_obj
 
 def window_key_for_ts(ts_ms):
     if ts_ms is None:
@@ -127,11 +133,11 @@ def window_key_for_ts(ts_ms):
 
 def process_message(msg_id, fields):
     try:
-        tags, ts_ms, payload_obj = parse_hashtags_from_fields(fields)
+        tags, event_type, ts_ms, payload_obj = parse_hashtags_from_fields(fields)
 
-        if not tags:
+        if not tags and not event_type:
             # nothing to aggregate — ack and continue
-            log.info("No hashtags in message %s — fields=%s", msg_id, {k: (v[:200] + '...') if isinstance(v, str) and len(v)>200 else v for k,v in fields.items()})
+            log.info("No hashtags or event type in message %s — fields=%s", msg_id, {k: (v[:200] + '...') if isinstance(v, str) and len(v)>200 else v for k,v in fields.items()})
             r.xack(STREAM, GROUP, msg_id)
             return
 
@@ -153,14 +159,22 @@ def process_message(msg_id, fields):
         window_key, window_name, window_ts = window_key_for_ts(ts_ms)
 
         pipe = r.pipeline()
+        
+        # Update hashtag rankings
         for tag in tags:
             pipe.zincrby(GLOBAL_RANKING, 1, tag)
             pipe.zincrby(window_key, 1, tag)
         pipe.zadd(WINDOW_INDEX, {window_name: window_ts})
+        
+        # Update event type statistics
+        if event_type:
+            stats_key = f"stats:{event_type}"
+            pipe.incr(stats_key)
+        
         pipe.execute()
 
         r.xack(STREAM, GROUP, msg_id)
-        log.info("Processed %s tags=%s window=%s", msg_id, ",".join(tags), window_name)
+        log.info("Processed %s tags=%s event_type=%s window=%s", msg_id, ",".join(tags), event_type, window_name)
     except Exception as e:
         log.exception("Error processing message %s: %s", msg_id, e)
         # do not ack on unexpected error — message remains in pending for investigation

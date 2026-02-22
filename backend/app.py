@@ -80,9 +80,9 @@ def top_hashtags(n: int = 10):
 @app.get("/api/stats/interactions")
 def stats():
     try:
-        likes = int(r.get("stats:likes") or 0)
-        comments = int(r.get("stats:comments") or 0)
-        shares = int(r.get("stats:shares") or 0)
+        likes = int(r.get("stats:like") or 0)
+        comments = int(r.get("stats:comment") or 0)
+        shares = int(r.get("stats:share") or 0)
         return {"likes": likes, "comments": comments, "shares": shares}
     except redis.RedisError as re:
         raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")

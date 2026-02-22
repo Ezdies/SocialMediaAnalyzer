@@ -1,42 +1,46 @@
-// frontend/js/sim.js
-import { postEvent } from "./api.js";
-import { appendLog, setProgress } from "./ui.js";
+// frontend/sim.js
+import * as API from "./api.js";
+import { appendLog } from "./ui.js";
 
-export async function runBurst({ total = 100, concurrency = 20, tagPool = ["#AI","#Python"] , logEl, progressEl }) {
-  const queue = Array.from({length: total}, (_, i) => i);
-  let sent = 0;
+/**
+ * runBurst({count, concurrency, tags, onProgress})
+ * sends events and collects returned event_ids
+ */
+export async function runBurst({ count = 100, concurrency = 20, tags = ['#AI','#Redis','#Node'], onProgress = ()=>{} } = {}) {
+  const norm = tags.map(t => (t||'').trim()).filter(Boolean).map(t => t.startsWith('#') ? t : '#'+t);
+  let finished = 0;
+  const eventIds = [];
+  const makeEvent = () => {
+    const type = ['like','comment','share'][Math.floor(Math.random()*3)];
+    const tag = norm[Math.floor(Math.random()*norm.length)];
+    return { type, hashtags: [tag], user_id: 'sim-' + Math.floor(Math.random()*10000) };
+  };
 
-  function genEvent() {
-    const types = ["like","comment","share"];
-    const type = types[Math.floor(Math.random() * types.length)];
-    const count = Math.floor(Math.random() * 3) + 1;
-    const hs = [];
-    for (let i = 0; i < count; i++) hs.push(tagPool[Math.floor(Math.random() * tagPool.length)]);
-    return { type, hashtags: hs, user_id: "sim_" + Math.floor(Math.random() * 100000) };
-  }
-
-  async function worker() {
-    while (true) {
-      const i = queue.shift();
-      if (i === undefined) return;
-      const ev = genEvent();
-      try {
-        await postEvent(ev);
-        appendLog(logEl, `OK: ${JSON.stringify(ev)}`);
-      } catch (err) {
-        appendLog(logEl, `ERR: ${err.message}`);
+  const tasks = new Array(count).fill(0).map(() => async () => {
+    try {
+      const ev = makeEvent();
+      const res = await API.postEvent(ev);
+      if (res && res.event_id) {
+        eventIds.push(res.event_id);
+        appendLog(`Sim event sent, id=${res.event_id}`);
+      } else {
+        appendLog(`Sim event sent (no id returned)`);
       }
-      sent++;
-      setProgress(progressEl, sent / total);
+    } catch (e) {
+      appendLog(`Sim event error: ${e.message}`);
+    } finally {
+      finished++;
+      onProgress(finished, count);
     }
+  });
+
+  // run tasks in batches of size `concurrency`
+  for (let i = 0; i < tasks.length; i += concurrency) {
+    const batch = tasks.slice(i, i + concurrency).map(fn => fn());
+    await Promise.allSettled(batch);
+    // small pause to avoid tight loop / too large burst
+    await new Promise(r => setTimeout(r, 10));
   }
 
-  const workers = [];
-  for (let w = 0; w < Math.min(concurrency, total); w++) {
-    workers.push(worker());
-  }
-  await Promise.all(workers);
-  appendLog(logEl, `Symulacja zakończona — wysłano ${sent} eventów.`);
-  setProgress(progressEl, 1);
-  return sent;
+  return { finished, eventIds };
 }

@@ -1,122 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Social Trends — Interactive Demo</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <title>Social Trends Analyzer — demo</title>
+  <link rel="stylesheet" href="./css/styles.css" />
 </head>
 <body>
   <header class="header">
-    <h1>Social Trends — Interactive Demo</h1>
-    <div class="header-actions">
-      <button id="btnRefresh" class="btn">Odśwież</button>
+    <div>
+      <h1>Social Trends Analyzer — Demo (Realtime)</h1>
+      <div class="small">Producer: FastAPI → Redis Stream. Consumer: worker agreguje hashtagi.</div>
     </div>
   </header>
 
-  <nav class="tabs">
-    <button id="tabDashboard" class="tab active">Dashboard</button>
-    <button id="tabRAML" class="tab">API (RAML)</button>
-    <button id="tabSim" class="tab">Symulacja</button>
-  </nav>
-
   <main>
-    <section id="dashboard" class="panel">
-      <aside class="left">
+    <div class="panel">
+      <!-- Left column: Event form, last event, stats -->
+      <div class="left">
         <div class="card">
-          <h2>TOP Hashtags</h2>
-          <label class="inline">Top N:
-            <input id="topN" type="number" value="10" min="1" />
-          </label>
-          <ol id="tags"></ol>
-        </div>
+          <h2>Send event</h2>
+          <form id="sendForm">
+            <label for="evtType">Type</label>
+            <select id="evtType" required>
+              <option value="like">like</option>
+              <option value="comment">comment</option>
+              <option value="share">share</option>
+              <option value="hashtag">hashtag</option>
+            </select>
 
-        <div class="card">
-          <h2>Log akcji</h2>
-          <div id="log" class="log">Brak akcji.</div>
-        </div>
-      </aside>
+            <label for="evtTags">Hashtags (comma separated)</label>
+            <input id="evtTags" type="text" placeholder="#AI,#Redis" />
 
-      <aside class="right">
-        <div class="card">
-          <h3>Statystyki</h3>
-          <pre id="stats" class="small"></pre>
-        </div>
-
-        <div class="card">
-          <h3>Ręczne wysyłanie eventu</h3>
-          <form id="eventForm">
-            <label>Typ zdarzenia
-              <select id="evType">
-                <option value="like">like</option>
-                <option value="comment">comment</option>
-                <option value="share">share</option>
-                <option value="hashtag">hashtag</option>
-              </select>
-            </label>
-
-            <label>Hashtagi (oddziel przecinkiem)
-              <input id="evHashtags" type="text" placeholder="#AI,#Python" />
-            </label>
-
-            <label>User ID (opcjonalnie)
-              <input id="evUser" type="text" placeholder="u123" />
-            </label>
-
-            <div class="form-actions">
-              <button id="btnSendEvent" class="btn">Wyślij</button>
-            </div>
+            <label for="evtUser">User id (optional)</label>
+            <input id="evtUser" type="text" placeholder="user-123" />
 
             <div class="quick-actions">
-              <button type="button" class="btn" id="quickLike">Like #AI,#ML</button>
-              <button type="button" class="btn" id="quickComment">Comment #Python</button>
-              <button type="button" class="btn" id="quickShare">Share #Redis</button>
+              <button type="submit" class="btn">Send Event</button>
+              <button type="button" id="simBtn" class="btn">Run Simulator</button>
             </div>
           </form>
-        </div>
-      </aside>
-    </section>
 
-    <section id="ramlPanel" class="panel hidden">
-      <div class="card">
-        <h2>Specyfikacja RAML</h2>
-        <p class="small">Plik: <code>/api.raml</code></p>
-        <pre id="ramlView" class="raml">Ładowanie...</pre>
-        <p><a id="downloadLink" href="api.raml" download> Pobierz RAML </a></p>
-      </div>
-    </section>
+          <hr/>
 
-    <section id="simPanel" class="panel hidden">
-      <div class="card">
-        <h2>Masowa symulacja</h2>
+          <h3>Last Event ID</h3>
+          <div id="lastEventId" class="small" style="word-break:break-all; font-family:monospace;">-</div>
 
-        <label>Ilość zdarzeń
-          <input id="burstCount" type="number" value="100" min="1" />
-        </label>
+          <hr/>
 
-        <label>Równoległość (concurrency)
-          <input id="concurrency" type="number" value="20" min="1" />
-        </label>
-
-        <label>Hashtagi (lista, przecinki)
-          <input id="burstTags" type="text" value="#AI,#Python,#Redis,#ML,#Data" />
-        </label>
-
-        <div class="form-actions">
-          <button id="btnRunBurst" class="btn">Uruchom symulację</button>
-        </div>
-
-        <div class="progress">
-          <div id="progressBar" class="progress-bar"></div>
-        </div>
-
-        <div class="card small" style="margin-top:10px;">
-          <strong>Uwaga:</strong> symulacja wysyła żądania do <code>/api/events</code>.
+          <h3>Stats</h3>
+          <pre id="statsBox" class="small">Loading...</pre>
         </div>
       </div>
-    </section>
+
+      <!-- Right column: Top hashtags, log -->
+      <div class="right">
+        <div class="card">
+          <h2>Top Hashtags</h2>
+          <ol id="topList" class="small">
+            <li>Loading…</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <h2>Activity Log</h2>
+          <pre id="logBox" class="log"></pre>
+        </div>
+      </div>
+    </div>
   </main>
 
-  <script type="module" src="js/app.js"></script>
+  <!-- import modules -->
+  <script type="module" src="./js/app.js"></script>
 </body>
 </html>
