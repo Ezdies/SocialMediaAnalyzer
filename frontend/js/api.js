@@ -41,6 +41,18 @@ export async function getStats() {
   return await request('/stats/interactions', { method: 'GET' });
 }
 
+export async function getHashtagsByPeriod(period = "1h", n = 10) {
+  const q = `?period=${encodeURIComponent(period)}&n=${encodeURIComponent(n)}`;
+  const data = await request(`/trends/hashtags/period${q}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getTopUsers(period = "all", n = 10) {
+  const q = `?period=${encodeURIComponent(period)}&n=${encodeURIComponent(n)}`;
+  const data = await request(`/trends/top-users${q}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
 export async function health() {
   return await request('/health', { method: 'GET' });
 }

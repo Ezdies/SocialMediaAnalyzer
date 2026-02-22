@@ -51,12 +51,36 @@
           <h3>Stats</h3>
           <pre id="statsBox" class="small">Loading...</pre>
         </div>
+
+        <div class="card">
+          <h2>Trends by Period</h2>
+          <div class="tabs">
+            <button class="tab tab-hashtag active" data-period="1h">Hashtags 1h</button>
+            <button class="tab tab-hashtag" data-period="24h">Hashtags 24h</button>
+            <button class="tab tab-hashtag" data-period="7d">Hashtags 7d</button>
+          </div>
+          <ol id="trendsList" class="small">
+            <li>Loading…</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <h2>Top Users</h2>
+          <div class="tabs">
+            <button class="tab tab-users active" data-period="all">All Time</button>
+            <button class="tab tab-users" data-period="24h">Last 24h</button>
+            <button class="tab tab-users" data-period="7d">Last 7d</button>
+          </div>
+          <ol id="usersList" class="small">
+            <li>Loading…</li>
+          </ol>
+        </div>
       </div>
 
-      <!-- Right column: Top hashtags, log -->
+      <!-- Right column: Top hashtags (global), log -->
       <div class="right">
         <div class="card">
-          <h2>Top Hashtags</h2>
+          <h2>Top Hashtags (Global)</h2>
           <ol id="topList" class="small">
             <li>Loading…</li>
           </ol>

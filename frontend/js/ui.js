@@ -33,3 +33,33 @@ export function showLastEventId(id) {
   const el = document.getElementById('lastEventId');
   if (el) el.textContent = id || '';
 }
+
+export function renderTrends(container, trends) {
+  container.innerHTML = '';
+  if (!Array.isArray(trends) || trends.length === 0) {
+    container.innerHTML = '<li>No data</li>';
+    return;
+  }
+  trends.forEach((it, idx) => {
+    const tag = it.hashtag || '';
+    const count = it.count || 0;
+    const li = document.createElement('li');
+    li.textContent = `${idx + 1}. ${tag.startsWith('#') ? tag : '#' + tag} (${count})`;
+    container.appendChild(li);
+  });
+}
+
+export function renderUsers(container, users) {
+  container.innerHTML = '';
+  if (!Array.isArray(users) || users.length === 0) {
+    container.innerHTML = '<li>No data</li>';
+    return;
+  }
+  users.forEach((it, idx) => {
+    const user = it.user || 'Unknown';
+    const count = it.activity_count || 0;
+    const li = document.createElement('li');
+    li.textContent = `${idx + 1}. ${user} (${count} events)`;
+    container.appendChild(li);
+  });
+}

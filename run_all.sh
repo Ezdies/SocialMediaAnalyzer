@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # run_all.sh — uruchamia/wyłącza lokalny stack (Redis, backend, frontend, redis-commander, consumer)
+# Components:
+#   - Redis: nosql database (port 6379)
+#   - Backend: FastAPI producer + trend endpoints (port 8000)
+#   - Consumer: real-time aggregator of events and stats (runs in background)
+#   - Frontend: web UI (port 8080)
+#   - Redis-Commander: web GUI for Redis (port 8081, optional)
+#
 # Usage:
-#   ./run_all.sh start
-#   ./run_all.sh stop
-#   ./run_all.sh status
-#   ./run_all.sh restart
-#   ./run_all.sh reset
+#   ./run_all.sh start       — start all services
+#   ./run_all.sh reset       — start with clean Redis database
+#   ./run_all.sh stop        — stop all services
+#   ./run_all.sh status      — show status of all services
+#   ./run_all.sh restart     — stop and start all services
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -134,10 +141,24 @@ start_redis() {
 reset_redis() {
   echo "Resetting Redis keys used by the project..."
   if command -v redis-cli >/dev/null 2>&1; then
-    redis-cli -p "$REDIS_PORT" DEL stats:likes stats:comments stats:shares hashtags:ranking hashtags:windows >/dev/null 2>&1 || true
-    echo "Keys deleted (best-effort)."
+    # Stats
+    redis-cli -p "$REDIS_PORT" DEL stats:like stats:comment stats:share stats:likes stats:comments stats:shares >/dev/null 2>&1 || true
+    # Hashtags (global + windowed)
+    redis-cli -p "$REDIS_PORT" DEL hashtags:ranking hashtags:windows >/dev/null 2>&1 || true
+    redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'hashtags:ranking:*')))" 0 > /dev/null 2>&1 || true
+    # Users (global + windowed)
+    redis-cli -p "$REDIS_PORT" DEL users:activity >/dev/null 2>&1 || true
+    redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'users:activity:*')))" 0 > /dev/null 2>&1 || true
+    # Temp keys (from trends aggregation)
+    redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'temp:*')))" 0 > /dev/null 2>&1 || true
+    # Dedup keys
+    redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'processed:*')))" 0 > /dev/null 2>&1 || true
+    # Events stream (optional: keep for reprocessing or clear for fresh start)
+    # redis-cli -p "$REDIS_PORT" DEL events:stream >/dev/null 2>&1 || true
+    echo "✓ Redis keys reset successfully"
   else
-    echo "redis-cli not found — cannot reset keys automatically."
+    echo "⚠ redis-cli not found — cannot reset keys automatically."
+    echo "  If Redis is running, keys will accumulate. Consider installing redis-tools."
   fi
 }
 
@@ -417,17 +438,33 @@ status_all() {
 case "${1:-start}" in
   start)
     echo "Starting stack..."
+    # Verify venv exists
+    if [[ ! -d "$VENV_DIR" ]]; then
+      echo "ERROR: Python venv not found at $VENV_DIR"
+      echo "Please create it with: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install -r backend/requirements.txt"
+      exit 1
+    fi
     start_redis || echo "Warning: problem starting Redis."
     start_backend
     start_frontend
     start_consumer
     start_redis_commander
     echo ""
-    echo "Stack should be up. Frontend: http://localhost:$FRONTEND_PORT  Backend: http://localhost:$UVICORN_PORT  Redis-Commander: http://localhost:$REDIS_CMD_PORT"
+    echo "========================================="
+    echo "Stack is up!"
+    echo "  Frontend:       http://localhost:$FRONTEND_PORT"
+    echo "  Backend API:    http://localhost:$UVICORN_PORT/api"
+    echo "  Backend Docs:   http://localhost:$UVICORN_PORT/docs"
+    echo "  Redis Commander: http://localhost:$REDIS_CMD_PORT"
+    echo "========================================="
     ;;
 
   reset)
     echo "Starting stack with Redis reset..."
+    if [[ ! -d "$VENV_DIR" ]]; then
+      echo "ERROR: Python venv not found at $VENV_DIR"
+      exit 1
+    fi
     start_redis || echo "Warning: problem starting Redis."
     reset_redis
     start_backend
@@ -435,7 +472,10 @@ case "${1:-start}" in
     start_consumer
     start_redis_commander
     echo ""
+    echo "========================================="
     echo "Stack reset & started. Clean database ready."
+    echo "  Frontend:       http://localhost:$FRONTEND_PORT"
+    echo "========================================="
     ;;
 
   stop)

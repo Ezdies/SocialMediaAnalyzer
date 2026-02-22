@@ -1,12 +1,37 @@
 // frontend/app.js
 import * as API from "./api.js";
 import { runBurst } from "./sim.js";
-import { renderTags, renderStats, appendLog, showLastEventId } from "./ui.js";
+import { renderTags, renderStats, appendLog, showLastEventId, renderTrends, renderUsers } from "./ui.js";
 
 const topList = document.getElementById('topList');
 const statsBox = document.getElementById('statsBox');
 const logBox = document.getElementById('logBox');
 const lastId = document.getElementById('lastEventId');
+const trendsList = document.getElementById('trendsList');
+const usersList = document.getElementById('usersList');
+
+let currentHashtagPeriod = '1h';
+let currentUserPeriod = 'all';
+
+async function loadTrends(period = '1h') {
+  try {
+    const trends = await API.getHashtagsByPeriod(period, 10);
+    renderTrends(trendsList, trends);
+    currentHashtagPeriod = period;
+  } catch (e) {
+    appendLog(`Trends load error: ${e.message}`);
+  }
+}
+
+async function loadUsers(period = 'all') {
+  try {
+    const users = await API.getTopUsers(period, 10);
+    renderUsers(usersList, users);
+    currentUserPeriod = period;
+  } catch (e) {
+    appendLog(`Users load error: ${e.message}`);
+  }
+}
 
 async function loadAll() {
   try {
@@ -14,6 +39,8 @@ async function loadAll() {
     renderTags(topList, tags);
     const stats = await API.getStats();
     renderStats(statsBox, stats);
+    await loadTrends(currentHashtagPeriod);
+    await loadUsers(currentUserPeriod);
   } catch (e) {
     appendLog(`Load error: ${e.message}`);
   }
@@ -57,6 +84,24 @@ if (simBtn) {
     await loadAll();
   });
 }
+
+// wire trend period tabs
+document.querySelectorAll('.tab-hashtag').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('.tab-hashtag').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    await loadTrends(btn.dataset.period);
+  });
+});
+
+// wire user period tabs
+document.querySelectorAll('.tab-users').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('.tab-users').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    await loadUsers(btn.dataset.period);
+  });
+});
 
 // initial load + polling
 window.addEventListener('load', () => {

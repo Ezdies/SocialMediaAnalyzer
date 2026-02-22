@@ -7,6 +7,7 @@ import time
 import json
 import os
 from uuid import uuid4
+from datetime import datetime, timezone, timedelta
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -84,5 +85,93 @@ def stats():
         comments = int(r.get("stats:comment") or 0)
         shares = int(r.get("stats:share") or 0)
         return {"likes": likes, "comments": comments, "shares": shares}
+    except redis.RedisError as re:
+        raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")
+
+@app.get("/api/trends/hashtags/period")
+def top_hashtags_by_period(period: str = "1h", n: int = 10):
+    """
+    Get top hashtags for a specific time period.
+    Periods: 1h, 24h, 7d
+    """
+    try:
+        # Calculate window name based on period
+        now = datetime.now(timezone.utc)
+        
+        if period == "1h":
+            window_name = now.strftime("%Y%m%d%H%M")
+            key = f"hashtags:ranking:{window_name}"
+        elif period == "24h":
+            # Aggregate all windows from past 24 hours
+            windows = []
+            for i in range(24 * 60):
+                w = (now - timedelta(minutes=i)).strftime("%Y%m%d%H%M")
+                windows.append(f"hashtags:ranking:{w}")
+            key = None  # We'll handle this specially
+        elif period == "7d":
+            # Aggregate all windows from past 7 days
+            windows = []
+            for i in range(7 * 24 * 60):
+                w = (now - timedelta(minutes=i)).strftime("%Y%m%d%H%M")
+                windows.append(f"hashtags:ranking:{w}")
+            key = None  # We'll handle this specially
+        else:
+            raise HTTPException(status_code=400, detail="period must be 1h, 24h, or 7d")
+        
+        if key:
+            # Single window
+            raw = r.zrevrange(key, 0, n - 1, withscores=True)
+        else:
+            # Multiple windows - use ZUNIONSTORE
+            dest_key = f"temp:hashtags:{period}:{int(time.time() * 1000)}"
+            r.zunionstore(dest_key, {w: 1 for w in windows})
+            r.expire(dest_key, 60)  # expire after 60 seconds
+            raw = r.zrevrange(dest_key, 0, n - 1, withscores=True)
+        
+        out = [{"hashtag": member, "count": int(score)} for member, score in raw]
+        return out
+    except redis.RedisError as re:
+        raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")
+
+@app.get("/api/trends/top-users")
+def top_users(period: str = "all", n: int = 10):
+    """
+    Get most active users.
+    Periods: all (global), 1h, 24h, 7d
+    """
+    try:
+        if period == "all":
+            key = "users:activity"
+            raw = r.zrevrange(key, 0, n - 1, withscores=True)
+        else:
+            now = datetime.now(timezone.utc)
+            
+            if period == "1h":
+                window_name = now.strftime("%Y%m%d%H%M")
+                key = f"users:activity:{window_name}"
+                raw = r.zrevrange(key, 0, n - 1, withscores=True)
+            elif period == "24h":
+                windows = []
+                for i in range(24 * 60):
+                    w = (now - timedelta(minutes=i)).strftime("%Y%m%d%H%M")
+                    windows.append(f"users:activity:{w}")
+                dest_key = f"temp:users:{period}:{int(time.time() * 1000)}"
+                r.zunionstore(dest_key, {w: 1 for w in windows})
+                r.expire(dest_key, 60)
+                raw = r.zrevrange(dest_key, 0, n - 1, withscores=True)
+            elif period == "7d":
+                windows = []
+                for i in range(7 * 24 * 60):
+                    w = (now - timedelta(minutes=i)).strftime("%Y%m%d%H%M")
+                    windows.append(f"users:activity:{w}")
+                dest_key = f"temp:users:{period}:{int(time.time() * 1000)}"
+                r.zunionstore(dest_key, {w: 1 for w in windows})
+                r.expire(dest_key, 60)
+                raw = r.zrevrange(dest_key, 0, n - 1, withscores=True)
+            else:
+                raise HTTPException(status_code=400, detail="period must be all, 1h, 24h, or 7d")
+        
+        out = [{"user": member, "activity_count": int(score)} for member, score in raw]
+        return out
     except redis.RedisError as re:
         raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")
