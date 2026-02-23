@@ -62,8 +62,8 @@ def post_event(ev: Event):
 
     try:
         hashtags_csv = ",".join([h.strip() for h in (ev.hashtags or []) if h])
-        # zapis do streama tylko
-        r.xadd("events:stream", {"payload": payload_str, "time": ts, "hashtags": hashtags_csv})
+        # zapis do streama tylko - trimuje stream do max 10000 eventów aby oszczędzić RAM
+        r.xadd("events:stream", {"payload": payload_str, "time": ts, "hashtags": hashtags_csv}, maxlen=10000, approximate=True)
     except redis.RedisError as re:
         raise HTTPException(status_code=500, detail=f"Redis error: {str(re)}")
     except Exception as e:

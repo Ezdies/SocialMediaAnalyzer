@@ -160,6 +160,9 @@ reset_redis() {
     # Dedup keys
     redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'processed:*')))" 0 > /dev/null 2>&1 || true
 
+    # IMPORTANT: Destroy consumer group so consumer starts fresh on next run
+    redis-cli -p "$REDIS_PORT" XGROUP DESTROY events:stream events_group >/dev/null 2>&1 || true
+
     # Events stream (optional: keep for reprocessing or clear for fresh start)
     # redis-cli -p "$REDIS_PORT" DEL events:stream >/dev/null 2>&1 || true
 
