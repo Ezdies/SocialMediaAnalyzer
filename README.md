@@ -1,4 +1,4 @@
-# Analiza trendów w social media – Redis
+# Analiza trendów w social media - Redis
 
 ## Opis projektu
 
@@ -7,11 +7,13 @@ Aplikacja zlicza wystąpienia hashtagów oraz interakcje użytkowników (polubie
 
 Dane są symulowane i wysyłane do systemu przez API.
 
+> Ciekawostka: system działa w modelu **event‑driven** – backend nie zapisuje "stanu" posta ani użytkownika, tylko rejestruje zdarzenia (events), a widoki są z nich wyliczane na bieżąco.
+
 ---
 
 ## Architektura systemu
 
-# SocialMediaAnalyzer — analiza trendów w czasie rzeczywistym
+# SocialMediaAnalyzer - analiza trendów w czasie rzeczywistym
 
 Aktualny projekt to edukacyjna aplikacja pokazująca przepływ zdarzeń (events) od frontendu/symulatora, przez backend (FastAPI) do Redis, gdzie działa prosty agregator (consumer) tworzący materializowane widoki (rankingi, liczniki, lista ostatnich komentarzy). Frontend je odczytuje i prezentuje w panelu.
 
@@ -19,38 +21,42 @@ Ten README opisuje szybkie uruchomienie, kluczowe endpointy, strukturę Redis i 
 
 ---
 
-## Architektura — krótko
+## Architektura - krótko
 
-- `frontend/` — statyczny panel (HTML/JS) + symulator (`sim.js`) wysyłający zdarzenia do API.
-- `backend/` — FastAPI: przyjmuje POST `/api/events` (XADD do `events:stream`) oraz udostępnia czytelnicze endpointy (trendy, statystyki, ostatnie komentarze).
-- `consumer.py` — proces działający w tle: odczytuje `events:stream`, deduplikuje, aktualizuje ZSETy/STRINGS/LIST w Redis (np. `hashtags:ranking`, `users:activity`, `stats:*`, `recent:comments`).
-- `Redis` — pamięć, używane typy: Stream, Sorted Set, String, List.
+* `frontend/` - statyczny panel (HTML/JS) + symulator (`sim.js`) wysyłający zdarzenia do API.
+* `backend/` - FastAPI: przyjmuje POST `/api/events` (XADD do `events:stream`) oraz udostępnia czytelnicze endpointy (trendy, statystyki, ostatnie komentarze).
+* `consumer.py` - proces działający w tle: odczytuje `events:stream`, deduplikuje, aktualizuje ZSETy/STRINGS/LIST w Redis (np. `hashtags:ranking`, `users:activity`, `stats:*`, `recent:comments`).
+* `Redis` - pamięć, używane typy: Stream, Sorted Set, String, List.
 
 Przepływ: frontend → POST /api/events → Redis Stream `events:stream` → consumer (XREADGROUP/XREAD) → materializowane widoki → API GET → frontend.
+
+> Redis Stream pełni tu rolę logu zdarzeń (podobnie do Apache Kafka), a nie klasycznej kolejki – dane są z niego przetwarzane i agregowane, a następnie mogą zostać usunięte bez utraty wyników.
 
 ---
 
 ## Kluczowe Redis‑keys używane przez projekt
 
-- `events:stream` — Redis Stream z oryginalnymi zdarzeniami
-- `processed:*` — deduplikacja pojedynczych eventów (consumer)
-- `stats:like`, `stats:comment`, `stats:share` — proste liczniki
-- `hashtags:ranking` oraz `hashtags:ranking:<window>` — ZSETy dla globalnych i okien czasowych
-- `users:activity` oraz `users:activity:<window>` — ZSETy aktywności użytkowników
-- `recent:comments` — LISTa ostatnich komentarzy (LPUSH + LTRIM)
+* `events:stream` - Redis Stream z oryginalnymi zdarzeniami
+* `processed:*` - deduplikacja pojedynczych eventów (consumer)
+* `stats:like`, `stats:comment`, `stats:share` - proste liczniki
+* `hashtags:ranking` oraz `hashtags:ranking:<window>` - ZSETy dla globalnych i okien czasowych
+* `users:activity` oraz `users:activity:<window>` - ZSETy aktywności użytkowników
+* `recent:comments` - LISTa ostatnich komentarzy (LPUSH + LTRIM)
 
 Uwaga: nazwy okien i dodatkowe klucze mogą być tworzone dynamicznie przez consumer (np. `hashtags:ranking:1h`).
+
+> `processed:*` implementuje idempotencję - jeśli worker przeczyta ten sam event ponownie (np. po restarcie), nie zostanie on policzony drugi raz.
 
 ---
 
 ## Endpointy API (wybrane)
 
-- POST `/api/events` — przyjmuje JSON eventu: `{ "type": "like|comment|share", "hashtags": ["#tag"], "user_id": "user123", "comment": "opcjonalny tekst" }`.
-- GET `/api/trends/hashtags` — najpopularniejsze hashtagi (globalnie).
-- GET `/api/trends/hashtags/period?period=1h|24h|7d` — trendy dla przedziału czasowego.
-- GET `/api/trends/top-users?period=...` — top userów wg aktywności.
-- GET `/api/stats/interactions` — sumaryczne liczniki interakcji.
-- GET `/api/comments/recent?n=20` — ostatnie `n` komentarzy z `recent:comments`.
+* POST `/api/events` - przyjmuje JSON eventu: `{ "type": "like|comment|share", "hashtags": ["#tag"], "user_id": "user123", "comment": "opcjonalny tekst" }`.
+* GET `/api/trends/hashtags` - najpopularniejsze hashtagi (globalnie).
+* GET `/api/trends/hashtags/period?period=1h|24h|7d` - trendy dla przedziału czasowego.
+* GET `/api/trends/top-users?period=...` - top userów wg aktywności.
+* GET `/api/stats/interactions` - sumaryczne liczniki interakcji.
+* GET `/api/comments/recent?n=20` - ostatnie `n` komentarzy z `recent:comments`.
 
 Przykład POST:
 
@@ -82,7 +88,7 @@ pip install -r backend/requirements.txt
 FULL_REDIS_RESET=1 ./run_all.sh reset  # Uwaga: pełny FLUSHDB
 ```
 
-Ważne: `restart` wykonuje stop/start, ale NIE czyści danych — do wyczyszczenia użyj `reset`.
+Ważne: `restart` wykonuje stop/start, ale NIE czyści danych - do wyczyszczenia użyj `reset`.
 
 ---
 
@@ -111,7 +117,6 @@ Symulator generuje zdarzenia i wysyła je do `/api/events`. Dla typu `comment` s
 W panelu webowym znajduje się nowa sekcja **Interactive Chart**. Umożliwia ona wybór metryki (najpopularniejsze hashtagi, aktywność użytkowników lub łączna liczba interakcji) oraz okresu (`1h`, `24h`, `7d` lub `all`).
 Wykres typu słupkowego rysowany jest przy użyciu Chart.js i odświeża się automatycznie po każdej zmianie filtrów. Służy do szybkiej wizualizacji rankingów danych.
 
-
 ---
 
 ## Debug / typowe komendy
@@ -131,4 +136,4 @@ redis-cli -p 6379 ZREVRANGE hashtags:ranking 0 10 WITHSCORES
 redis-cli -p 6379 LRANGE recent:comments 0 20
 ```
 
----
+> Jeśli `XPENDING events:stream events_group` zwraca >0, consumer nie nadąża z przetwarzaniem zdarzeń.
