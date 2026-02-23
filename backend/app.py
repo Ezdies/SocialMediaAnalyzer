@@ -31,6 +31,7 @@ class Event(BaseModel):
     comment: Optional[str] = None
     user_id: Optional[str] = None
     metadata: Optional[dict] = {}
+    ts: Optional[int] = None  # Optional timestamp in milliseconds
 
 @app.get("/api/health")
 def health():
@@ -46,7 +47,7 @@ def post_event(ev: Event):
     Producer: jedynie zapisuje pełny event do streama (events:stream).
     Zwraca event_id (UUID) aby ułatwić testy idempotencji.
     """
-    ts = int(time.time() * 1000)
+    ts = ev.ts if ev.ts is not None else int(time.time() * 1000)
     event_id = str(uuid4())
     payload_obj = {
         "event_id": event_id,

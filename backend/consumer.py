@@ -38,7 +38,7 @@ WINDOW_PREFIX = os.getenv("WINDOW_PREFIX", "hashtags:ranking:")
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 50))
 BLOCK_MS = int(os.getenv("BLOCK_MS", 5000))
-RETENTION_MINUTES = int(os.getenv("RETENTION_MINUTES", 60))
+RETENTION_MINUTES = int(os.getenv("RETENTION_MINUTES", 7 * 24 * 60))  # default 7 days
 DEDUPE_TTL_SECONDS = int(os.getenv("DEDUPE_TTL_SECONDS", 7 * 24 * 3600))  # default 7 days
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -128,12 +128,12 @@ def parse_hashtags_from_fields(fields):
 
 def window_key_for_ts(ts_ms):
     if ts_ms is None:
-        dt = datetime.utcnow()
+        dt = datetime.now(timezone.utc)
     else:
         dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
     window = dt.strftime("%Y%m%d%H%M")
     key = f"{WINDOW_PREFIX}{window}"
-    return key, window, int(dt.replace(tzinfo=timezone.utc).timestamp())
+    return key, window, int(dt.timestamp())
 
 def process_message(msg_id, fields):
     try:
@@ -215,9 +215,27 @@ def cleanup_old_windows(retention_minutes):
     except Exception:
         log.exception("Error during cleanup_old_windows")
 
+def rebuild_global_ranking():
+    """Rebuild global ranking from current windows only (remove old tags)"""
+    try:
+        windows = r.zrange(WINDOW_INDEX, 0, -1)
+        if not windows:
+            r.delete(GLOBAL_RANKING)
+            return
+        
+        temp_key = f"temp:global:{int(time.time() * 1000)}"
+        window_keys = {f"{WINDOW_PREFIX}{w}": 1 for w in windows}
+        r.zunionstore(temp_key, window_keys)
+        r.delete(GLOBAL_RANKING)
+        r.rename(temp_key, GLOBAL_RANKING)
+        log.info("Rebuilt global ranking from %d windows", len(windows))
+    except Exception:
+        log.exception("Error during rebuild_global_ranking")
+
 def main_loop():
     ensure_group()
     last_cleanup = time.time()
+    last_rebuild = time.time()
     while True:
         try:
             resp = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=BATCH_SIZE, block=BLOCK_MS)
@@ -226,9 +244,14 @@ def main_loop():
                     for msg_id, fields in messages:
                         process_message(msg_id, fields)
 
-            if time.time() - last_cleanup > 30:
+            now = time.time()
+            if now - last_cleanup > 30:
                 cleanup_old_windows(RETENTION_MINUTES)
-                last_cleanup = time.time()
+                last_cleanup = now
+            
+            if now - last_rebuild > 300:  # Rebuild global ranking every 5 minutes
+                rebuild_global_ranking()
+                last_rebuild = now
         except redis.exceptions.ResponseError as re:
             log.exception("Redis ResponseError (ensuring group): %s", re)
             try:

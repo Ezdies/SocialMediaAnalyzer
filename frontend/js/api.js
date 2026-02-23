@@ -20,14 +20,27 @@ async function request(path, opts = {}) {
 }
 
 export async function postEvent(payload) {
-  // payload: { type, hashtags: [], user_id }
+  // payload: { type, hashtags: [], user_id, ts (optional) }
+  // Ensure hashtags is always an array of strings
+  let hashtags = [];
+  if (Array.isArray(payload.hashtags)) {
+    hashtags = payload.hashtags.filter(h => h); // Filter out empty/null values
+  } else if (payload.hashtags) {
+    hashtags = [payload.hashtags];
+  }
+  
   const safe = {
     type: payload.type,
-    hashtags: Array.isArray(payload.hashtags) ? payload.hashtags : (payload.hashtags ? [payload.hashtags] : []),
+    hashtags: hashtags,
     user_id: payload.user_id || payload.user || "",
     comment: payload.comment || "",
     metadata: payload.metadata || {}
   };
+  
+  if (payload.ts !== undefined) {
+    safe.ts = payload.ts;
+  }
+  
   return await request('/events', { method: 'POST', body: JSON.stringify(safe) });
 }
 

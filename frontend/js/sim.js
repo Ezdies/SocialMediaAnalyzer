@@ -10,10 +10,17 @@ export async function runBurst({ count = 100, concurrency = 20, tags = ['#AI','#
   const norm = tags.map(t => (t||'').trim()).filter(Boolean).map(t => t.startsWith('#') ? t : '#'+t);
   let finished = 0;
   const eventIds = [];
+  
+  // Generate random timestamps from the last 7 days
+  const now = Date.now();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  
   const makeEvent = () => {
     const type = ['like','comment','share'][Math.floor(Math.random()*3)];
     const tag = norm[Math.floor(Math.random()*norm.length)];
-    const base = { type, hashtags: [tag], user_id: 'sim-' + Math.floor(Math.random()*10000) };
+    const randomMs = Math.floor(Math.random() * sevenDaysMs);
+    const ts = now - randomMs; // Random timestamp in the last 7 days
+    const base = { type, hashtags: [tag], user_id: 'sim-' + Math.floor(Math.random()*10000), ts };
     if (type === 'comment') {
       const sample = [
         'Nice post!',
