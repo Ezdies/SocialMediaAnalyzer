@@ -141,24 +141,28 @@ start_redis() {
 reset_redis() {
   echo "Resetting Redis keys used by the project..."
   if command -v redis-cli >/dev/null 2>&1; then
-    # Stats
+    # Stats (counters)
     redis-cli -p "$REDIS_PORT" DEL stats:like stats:comment stats:share stats:likes stats:comments stats:shares >/dev/null 2>&1 || true
+    # recent comments list
+    redis-cli -p "$REDIS_PORT" DEL recent:comments >/dev/null 2>&1 || true
+
     # Hashtags (global + windowed)
     redis-cli -p "$REDIS_PORT" DEL hashtags:ranking hashtags:windows >/dev/null 2>&1 || true
     redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'hashtags:ranking:*')))" 0 > /dev/null 2>&1 || true
+
     # Users (global + windowed)
     redis-cli -p "$REDIS_PORT" DEL users:activity >/dev/null 2>&1 || true
     redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'users:activity:*')))" 0 > /dev/null 2>&1 || true
+
     # Temp keys (from trends aggregation)
     redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'temp:*')))" 0 > /dev/null 2>&1 || true
+
     # Dedup keys
     redis-cli -p "$REDIS_PORT" EVAL "return redis.call('del', unpack(redis.call('keys', 'processed:*')))" 0 > /dev/null 2>&1 || true
+
     # Events stream (optional: keep for reprocessing or clear for fresh start)
     # redis-cli -p "$REDIS_PORT" DEL events:stream >/dev/null 2>&1 || true
-    echo "✓ Redis keys reset successfully"
-  else
-    echo "⚠ redis-cli not found — cannot reset keys automatically."
-    echo "  If Redis is running, keys will accumulate. Consider installing redis-tools."
+
   fi
 }
 
