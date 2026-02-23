@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Social Trends Analyzer — demo</title>
   <link rel="stylesheet" href="./css/styles.css" />
+  <!-- chart library -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <header class="header">
@@ -77,6 +79,26 @@
           <ol id="usersList" class="small">
             <li>Loading…</li>
           </ol>
+        </div>
+
+        <div class="card">
+          <h2>Interactive Chart</h2>
+          <div class="chart-controls" style="margin-bottom:8px;">
+            <label for="chartMetric">Metric:</label>
+            <select id="chartMetric">
+              <option value="hashtags" selected>Hashtags</option>
+              <option value="users">Top Users</option>
+              <option value="stats">Interactions</option>
+            </select>
+            <label for="chartPeriod" style="margin-left:12px;">Period:</label>
+            <select id="chartPeriod">
+              <option value="1h">1h</option>
+              <option value="24h">24h</option>
+              <option value="7d">7d</option>
+              <option value="all">all</option>
+            </select>
+          </div>
+          <canvas id="dataChart" width="400" height="200"></canvas>
         </div>
       </div>
 

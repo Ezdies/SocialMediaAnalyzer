@@ -106,6 +106,12 @@ Jeżeli chcesz wymusić ponowne przetworzenie historycznych eventów po zmianie 
 
 Symulator generuje zdarzenia i wysyła je do `/api/events`. Dla typu `comment` symulator obecnie dołącza pole `comment` z przykładowym tekstem, dzięki czemu komentarze przepływają przez consumer i pojawiają się w `/api/comments/recent`.
 
+## Interaktywny wykres
+
+W panelu webowym znajduje się nowa sekcja **Interactive Chart**. Umożliwia ona wybór metryki (najpopularniejsze hashtagi, aktywność użytkowników lub łączna liczba interakcji) oraz okresu (`1h`, `24h`, `7d` lub `all`).
+Wykres typu słupkowego rysowany jest przy użyciu Chart.js i odświeża się automatycznie po każdej zmianie filtrów. Służy do szybkiej wizualizacji rankingów danych.
+
+
 ---
 
 ## Debug / typowe komendy

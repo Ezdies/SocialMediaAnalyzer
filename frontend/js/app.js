@@ -138,6 +138,62 @@ if (typeSelect) {
   updateCommentVisibility();
 }
 
+// ------ chart handling ------
+let dataChart = null;
+function initChart() {
+  const ctx = document.getElementById('dataChart');
+  if (!ctx) return;
+  dataChart = new Chart(ctx.getContext('2d'), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: '', data: [], backgroundColor: 'rgba(54, 162, 235, 0.6)' }] },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true } },
+    },
+  });
+}
+
+async function updateChart() {
+  if (!dataChart) return;
+  const metric = document.getElementById('chartMetric')?.value;
+  const period = document.getElementById('chartPeriod')?.value;
+  try {
+    if (metric === 'hashtags') {
+      const arr = await API.getHashtagsByPeriod(period, 20);
+      dataChart.data.labels = arr.map(d => d.hashtag);
+      dataChart.data.datasets[0].data = arr.map(d => d.count);
+      dataChart.data.datasets[0].label = 'Hashtag count';
+    } else if (metric === 'users') {
+      const arr = await API.getTopUsers(period === 'all' ? 'all' : period, 20);
+      dataChart.data.labels = arr.map(d => d.user);
+      dataChart.data.datasets[0].data = arr.map(d => d.activity_count);
+      dataChart.data.datasets[0].label = 'User activity';
+    } else if (metric === 'stats') {
+      const s = await API.getStats();
+      dataChart.data.labels = ['likes','comments','shares'];
+      dataChart.data.datasets[0].data = [s.likes, s.comments, s.shares];
+      dataChart.data.datasets[0].label = 'Interactions';
+    }
+    dataChart.update();
+  } catch (e) {
+    appendLog(`Chart load error: ${e.message}`);
+  }
+}
+
+// chart controls wiring
+const metricSelect = document.getElementById('chartMetric');
+const periodSelect = document.getElementById('chartPeriod');
+if (metricSelect) metricSelect.addEventListener('change', updateChart);
+if (periodSelect) periodSelect.addEventListener('change', updateChart);
+
+// initialize chart after page load
+window.addEventListener('load', () => {
+  initChart();
+  updateChart();
+  loadAll();
+  setInterval(loadAll, 5000);
+});
+
 // initial load + polling
 window.addEventListener('load', () => {
   loadAll();
